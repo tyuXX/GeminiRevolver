@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  # Main application
+  geimini-revolver:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: geimini-revolver
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - API_PASSWORD=${API_PASSWORD}
+      - GEMINI_API_KEYS=${GEMINI_API_KEYS}
+      - PORT=3000
+      - LOG_DIR=/app/logs
+      - NODE_ENV=production
+    volumes:
+      # Persist logs to host
+      - ./logs:/app/logs
+    networks:
+      - geimini-network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Cloudflare Tunnel
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared-tunnel
+    restart: unless-stopped
+    command: tunnel run
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
+    networks:
+      - geimini-network
+    depends_on:
+      geimini-revolver:
+        condition: service_healthy
+
+networks:
+  geimini-network:
+    driver: bridge
