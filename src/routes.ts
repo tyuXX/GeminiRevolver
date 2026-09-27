@@ -11,6 +11,9 @@ import {
 
 const router = Router();
 
+// Cache for model instances to avoid recreation
+const modelCache = new Map<string, any>();
+
 // Convert OpenAI format to Gemini format
 function convertToGeminiMessages(messages: any[]): any[] {
   return messages
@@ -88,7 +91,16 @@ router.post('/v1/chat/completions', async (req: Request, res: Response) => {
     
     // Always use the configured Gemini model internally, but return the requested model name in response
     requestedModel = body.model || config.model;
-    const model = genAI.getGenerativeModel({ model: config.model });
+    
+    // Use cached model instance if available
+    const cacheKey = `${apiKey}_${config.model}`;
+    let model;
+    if (modelCache.has(cacheKey)) {
+      model = modelCache.get(cacheKey);
+    } else {
+      model = genAI.getGenerativeModel({ model: config.model });
+      modelCache.set(cacheKey, model);
+    }
 
     // Convert messages
     const geminiMessages = convertToGeminiMessages(body.messages);

@@ -11,6 +11,7 @@ interface KeyUsage {
 class KeyRotationManager {
   private keys: KeyUsage[] = [];
   private currentIndex = 0;
+  private clientCache: Map<string, GoogleGenerativeAI> = new Map();
 
   constructor() {
     this.initializeKeys();
@@ -73,8 +74,21 @@ class KeyRotationManager {
 
   createGenerativeAI(): { client: GoogleGenerativeAI; apiKey: string } {
     const apiKey = this.getNextAvailableKey();
+    
+    // Check cache first
+    if (this.clientCache.has(apiKey)) {
+      return {
+        client: this.clientCache.get(apiKey)!,
+        apiKey
+      };
+    }
+    
+    // Create new client and cache it
+    const client = new GoogleGenerativeAI(apiKey);
+    this.clientCache.set(apiKey, client);
+    
     return {
-      client: new GoogleGenerativeAI(apiKey),
+      client,
       apiKey
     };
   }
