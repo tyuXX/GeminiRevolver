@@ -105,7 +105,75 @@ router.post('/v1/chat/completions', async (req: Request, res: Response) => {
       throw new Error('Last message must be from user');
     }
 
-    // Generate response
+    // Handle streaming requests
+    if (body.stream) {
+      console.log('[DEBUG] Streaming response requested');
+      
+      // Set headers for streaming
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      
+      // Generate streaming response
+      const result = await chat.sendMessageStream(lastMessage.parts[0].text);
+      let fullContent = '';
+      let chunkIndex = 0;
+      
+      for await (const chunk of result.stream) {
+        const chunkText = chunk.text();
+        fullContent += chunkText;
+        
+        // Send OpenAI-format chunk
+        const chunkResponse = {
+          id: `chatcmpl-${requestId}`,
+          object: 'chat.completion.chunk',
+          created: Math.floor(Date.now() / 1000),
+          model: requestedModel,
+          choices: [{
+            index: 0,
+            delta: {
+              content: chunkText
+            },
+            finish_reason: null
+          }]
+        };
+        
+        res.write(`data: ${JSON.stringify(chunkResponse)}\n\n`);
+        chunkIndex++;
+      }
+      
+      // Send final chunk
+      const finalChunk = {
+        id: `chatcmpl-${requestId}`,
+        object: 'chat.completion.chunk',
+        created: Math.floor(Date.now() / 1000),
+        model: requestedModel,
+        choices: [{
+          index: 0,
+          delta: {},
+          finish_reason: 'stop'
+        }]
+      };
+      
+      res.write(`data: ${JSON.stringify(finalChunk)}\n\n`);
+      res.write('data: [DONE]\n\n');
+      res.end();
+      
+      console.log('[DEBUG] Streaming response completed:', {
+        requestId,
+        totalChunks: chunkIndex,
+        contentLength: fullContent.length
+      });
+      
+      requestLogger.logResponse(requestId, {
+        statusCode: 200,
+        response: { streaming: true, chunks: chunkIndex, contentLength: fullContent.length }
+      });
+      
+      return;
+    }
+
+    // Generate non-streaming response
     const result = await chat.sendMessage(lastMessage.parts[0].text);
     const response = await result.response;
 
