@@ -29,8 +29,8 @@ class KeyRotationManager {
     return Date.now() < keyUsage.rateLimitedUntil;
   }
 
-  private markRateLimited(keyUsage: KeyUsage, durationMs: number = 60000): void {
-    keyUsage.rateLimitedUntil = Date.now() + durationMs;
+  private markRateLimited(keyUsage: KeyUsage, durationMs?: number): void {
+    keyUsage.rateLimitedUntil = Date.now() + (durationMs || config.rateLimitDurationMs);
   }
 
   getNextAvailableKey(): string {
@@ -71,9 +71,12 @@ class KeyRotationManager {
     return [...this.keys];
   }
 
-  createGenerativeAI(): GoogleGenerativeAI {
+  createGenerativeAI(): { client: GoogleGenerativeAI; apiKey: string } {
     const apiKey = this.getNextAvailableKey();
-    return new GoogleGenerativeAI(apiKey);
+    return {
+      client: new GoogleGenerativeAI(apiKey),
+      apiKey
+    };
   }
 }
 

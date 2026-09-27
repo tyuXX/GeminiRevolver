@@ -51,6 +51,7 @@ function convertToOpenAIResponse(geminiResponse: any, model: string, requestId: 
 // POST /v1/chat/completions
 router.post('/v1/chat/completions', async (req: Request, res: Response) => {
   const requestId = requestLogger.generateRequestId();
+  let apiKey = '';
   
   try {
     const body: OpenAIChatRequest = req.body;
@@ -68,7 +69,8 @@ router.post('/v1/chat/completions', async (req: Request, res: Response) => {
     }
 
     // Get Gemini client with rotated key
-    const genAI = keyRotationManager.createGenerativeAI();
+    const { client: genAI, apiKey: currentApiKey } = keyRotationManager.createGenerativeAI();
+    apiKey = currentApiKey;
     const model = genAI.getGenerativeModel({ model: config.model });
 
     // Convert messages
@@ -115,7 +117,18 @@ router.post('/v1/chat/completions', async (req: Request, res: Response) => {
     });
 
     // Check if it's a rate limit error
-    if (error.message?.includes('RATE_LIMIT_EXCEEDED') || error.status === 429) {
+    const isRateLimitError = 
+      error.status === 429 ||
+      error.message?.includes('RATE_LIMIT_EXCEEDED') ||
+      error.message?.includes('quota') ||
+      error.message?.includes('limit') ||
+      error.code === 429 ||
+      error.statusCode === 429;
+    
+    if (isRateLimitError) {
+      // Mark the key as rate limited
+      keyRotationManager.markKeyAsRateLimited(apiKey);
+      
       res.status(429).json({
         error: {
           message: 'Rate limit exceeded. Please try again later.',
