@@ -53,6 +53,7 @@ router.post('/v1/chat/completions', async (req: Request, res: Response) => {
   const requestId = requestLogger.generateRequestId();
   let apiKey = '';
   let requestedModel = '';
+  const startTime = Date.now();
   
   try {
     const body: OpenAIChatRequest = req.body;
@@ -80,8 +81,11 @@ router.post('/v1/chat/completions', async (req: Request, res: Response) => {
     }
 
     // Get Gemini client with rotated key
+    const keyRotationStart = Date.now();
     const { client: genAI, apiKey: currentApiKey } = keyRotationManager.createGenerativeAI();
     apiKey = currentApiKey;
+    console.log('[TIMING] Key rotation took:', Date.now() - keyRotationStart, 'ms');
+    
     // Always use the configured Gemini model internally, but return the requested model name in response
     requestedModel = body.model || config.model;
     const model = genAI.getGenerativeModel({ model: config.model });
@@ -115,13 +119,21 @@ router.post('/v1/chat/completions', async (req: Request, res: Response) => {
       res.setHeader('Connection', 'keep-alive');
       
       // Generate streaming response
+      const geminiStart = Date.now();
       const result = await chat.sendMessageStream(lastMessage.parts[0].text);
+      console.log('[TIMING] Gemini API call started:', Date.now() - geminiStart, 'ms');
+      
       let fullContent = '';
       let chunkIndex = 0;
+      const firstChunkTime = Date.now();
       
       for await (const chunk of result.stream) {
         const chunkText = chunk.text();
         fullContent += chunkText;
+        
+        if (chunkIndex === 0) {
+          console.log('[TIMING] First chunk received:', Date.now() - firstChunkTime, 'ms');
+        }
         
         // Send OpenAI-format chunk
         const chunkResponse = {
@@ -159,10 +171,13 @@ router.post('/v1/chat/completions', async (req: Request, res: Response) => {
       res.write('data: [DONE]\n\n');
       res.end();
       
-      console.log('[DEBUG] Streaming response completed:', {
+      const totalTime = Date.now() - startTime;
+      console.log('[TIMING] Streaming response completed:', {
         requestId,
         totalChunks: chunkIndex,
-        contentLength: fullContent.length
+        contentLength: fullContent.length,
+        totalTime: totalTime + 'ms',
+        avgTimePerChunk: (totalTime / chunkIndex).toFixed(2) + 'ms'
       });
       
       requestLogger.logResponse(requestId, {
@@ -174,18 +189,22 @@ router.post('/v1/chat/completions', async (req: Request, res: Response) => {
     }
 
     // Generate non-streaming response
+    const geminiStart = Date.now();
     const result = await chat.sendMessage(lastMessage.parts[0].text);
     const response = await result.response;
+    console.log('[TIMING] Gemini API call took:', Date.now() - geminiStart, 'ms');
 
     // Convert to OpenAI format
     const openaiResponse = convertToOpenAIResponse({ response }, requestedModel, requestId);
 
     // Log the response
-    console.log('[DEBUG] Successful response:', {
+    const totalTime = Date.now() - startTime;
+    console.log('[TIMING] Non-streaming response completed:', {
       requestId,
       statusCode: 200,
       model: requestedModel,
-      contentLength: openaiResponse.choices[0]?.message?.content?.length || 0
+      contentLength: openaiResponse.choices[0]?.message?.content?.length || 0,
+      totalTime: totalTime + 'ms'
     });
     
     requestLogger.logResponse(requestId, {
