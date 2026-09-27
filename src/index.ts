@@ -13,6 +13,13 @@ app.use(express.json());
 // Request logging middleware
 app.use((req, res, next) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
+  console.log('[REQUEST] Headers:', {
+    'content-type': req.headers['content-type'],
+    'authorization': req.headers.authorization ? 'Bearer ***' : 'missing',
+    'user-agent': req.headers['user-agent'],
+    'origin': req.headers['origin'],
+    'referer': req.headers['referer']
+  });
   next();
 });
 
@@ -22,9 +29,27 @@ app.use('/v1', authenticateApiKey);
 // Routes
 app.use('/', routes);
 
+// Catch-all route for debugging (must be after routes)
+app.use('*', (req, res) => {
+  console.log('[DEBUG] Unmatched route:', {
+    method: req.method,
+    path: req.path,
+    url: req.url,
+    headers: req.headers
+  });
+  res.status(404).json({
+    error: {
+      message: 'Route not found',
+      type: 'invalid_request_error',
+      code: 'route_not_found',
+      path: req.path
+    }
+  });
+});
+
 // Error handling middleware
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  console.error('Unhandled error:', err);
+  console.error('[ERROR] Unhandled error:', err);
   res.status(500).json({
     error: {
       message: 'Internal server error',

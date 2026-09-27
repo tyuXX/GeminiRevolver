@@ -57,7 +57,17 @@ router.post('/v1/chat/completions', async (req: Request, res: Response) => {
   try {
     const body: OpenAIChatRequest = req.body;
     
-    // Log the request
+    // Log the request with full details for debugging
+    console.log('[DEBUG] Incoming request:', {
+      requestId,
+      headers: {
+        'content-type': req.headers['content-type'],
+        'authorization': req.headers.authorization ? 'Bearer ***' : 'missing',
+        'user-agent': req.headers['user-agent']
+      },
+      body: body
+    });
+    
     requestLogger.logRequest(requestId, {
       path: req.path,
       method: req.method,
@@ -103,6 +113,13 @@ router.post('/v1/chat/completions', async (req: Request, res: Response) => {
     const openaiResponse = convertToOpenAIResponse({ response }, requestedModel, requestId);
 
     // Log the response
+    console.log('[DEBUG] Successful response:', {
+      requestId,
+      statusCode: 200,
+      model: requestedModel,
+      contentLength: openaiResponse.choices[0]?.message?.content?.length || 0
+    });
+    
     requestLogger.logResponse(requestId, {
       statusCode: 200,
       response: openaiResponse
@@ -111,7 +128,14 @@ router.post('/v1/chat/completions', async (req: Request, res: Response) => {
     res.json(openaiResponse);
 
   } catch (error: any) {
-    console.error('Error in chat completion:', error);
+    console.error('[ERROR] Error in chat completion:', {
+      requestId,
+      error: error.message,
+      stack: error.stack,
+      name: error.name,
+      status: error.status,
+      code: error.code
+    });
     
     // Log the error
     requestLogger.logError(requestId, {
