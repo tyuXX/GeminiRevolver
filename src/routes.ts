@@ -52,6 +52,7 @@ function convertToOpenAIResponse(geminiResponse: any, model: string, requestId: 
 router.post('/v1/chat/completions', async (req: Request, res: Response) => {
   const requestId = requestLogger.generateRequestId();
   let apiKey = '';
+  let requestedModel = '';
   
   try {
     const body: OpenAIChatRequest = req.body;
@@ -71,6 +72,8 @@ router.post('/v1/chat/completions', async (req: Request, res: Response) => {
     // Get Gemini client with rotated key
     const { client: genAI, apiKey: currentApiKey } = keyRotationManager.createGenerativeAI();
     apiKey = currentApiKey;
+    // Always use the configured Gemini model internally, but return the requested model name in response
+    requestedModel = body.model || config.model;
     const model = genAI.getGenerativeModel({ model: config.model });
 
     // Convert messages
@@ -97,7 +100,7 @@ router.post('/v1/chat/completions', async (req: Request, res: Response) => {
     const response = await result.response;
 
     // Convert to OpenAI format
-    const openaiResponse = convertToOpenAIResponse({ response }, body.model, requestId);
+    const openaiResponse = convertToOpenAIResponse({ response }, requestedModel, requestId);
 
     // Log the response
     requestLogger.logResponse(requestId, {
@@ -126,8 +129,10 @@ router.post('/v1/chat/completions', async (req: Request, res: Response) => {
       error.statusCode === 429;
     
     if (isRateLimitError) {
-      // Mark the key as rate limited
-      keyRotationManager.markKeyAsRateLimited(apiKey);
+      // Mark the key as rate limited if we have the API key
+      if (apiKey) {
+        keyRotationManager.markKeyAsRateLimited(apiKey);
+      }
       
       res.status(429).json({
         error: {
